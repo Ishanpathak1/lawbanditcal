@@ -1,0 +1,20 @@
+# dependencies
+node_modules/
+
+# local db
+db.json
+
+# uploads
+uploads/
+
+# env
+.env
+
+# build
+dist/
+
+# logs
+*.log
+
+# macOS
+.DS_Store

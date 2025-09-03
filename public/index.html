@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>syllabus2cal</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 2rem; }
+    input[type="text"], input[type="number"], input[type="date"], input[type="time"], select { width: 100%; box-sizing: border-box; padding: 6px; }
+    .row { display: flex; gap: 1rem; margin: .5rem 0; flex-wrap: wrap; }
+    .controls { display: flex; gap: .5rem; align-items: center; }
+    .calendar-header { display: flex; align-items: center; justify-content: space-between; margin-top: 1rem; }
+    .calendar-nav { display: flex; align-items: center; gap: .5rem; }
+    .calendar-month { font-weight: 600; font-size: 1.25rem; }
+    .calendar { border: 1px solid #ddd; border-radius: 8px; overflow: hidden; margin-top: .75rem; }
+    .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+    .calendar-weekdays { background: #fafafa; border-bottom: 1px solid #eee; }
+    .weekday { padding: .5rem; font-size: .85rem; color: #666; text-align: center; }
+    .day { min-height: 110px; border-right: 1px solid #eee; border-bottom: 1px solid #eee; padding: .25rem .25rem .5rem .25rem; position: relative; }
+    .day:nth-child(7n) { border-right: none; }
+    .date-badge { font-size: .8rem; color: #666; position: absolute; top: .25rem; right: .35rem; }
+    .other-month .date-badge { color: #bbb; }
+    .today .date-badge { background: #1a73e8; color: white; border-radius: 999px; padding: 0 .4rem; }
+    .event-chip { display: block; padding: 2px 6px; margin: 18px 4px 2px 4px; border-radius: 4px; font-size: .78rem; line-height: 1.2; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chip-assignment { background: #E3F2FD; color: #0D47A1; }
+    .chip-reading { background: #E8F5E9; color: #1B5E20; }
+    .chip-exam { background: #FCE4EC; color: #880E4F; }
+    .chip-quiz { background: #FFF3E0; color: #E65100; }
+    .chip-other { background: #ECEFF1; color: #37474F; }
+    .calendar-wrap { display: grid; grid-template-columns: 1fr 320px; gap: 1rem; align-items: start; }
+    .editor { border: 1px solid #ddd; border-radius: 8px; padding: .75rem; position: sticky; top: 1rem; }
+    .editor h3 { margin: .25rem 0 .5rem; font-size: 1rem; }
+    .editor .row label { flex: 1; min-width: 140px; }
+    .muted { color: #666; font-size: .9rem; }
+    .btn { padding: .4rem .7rem; border: 1px solid #cfd8dc; background: white; border-radius: 6px; cursor: pointer; }
+    .btn.primary { background: #1a73e8; color: white; border-color: #1a73e8; }
+    .btn.danger { background: #d32f2f; color: white; border-color: #d32f2f; }
+    .btn-group { display: flex; gap: .5rem; flex-wrap: wrap; }
+    .segmented { display: inline-flex; border: 1px solid #cfd8dc; border-radius: 6px; overflow: hidden; }
+    .segmented button { border: 0; background: white; padding: .4rem .6rem; cursor: pointer; }
+    .segmented button.active { background: #e3f2fd; color: #0d47a1; }
+    .filters { display: flex; gap: .5rem; align-items: center; }
+    .upload-zone { margin: .75rem 0; padding: 1rem; border: 2px dashed #b0bec5; border-radius: 8px; display: flex; align-items: center; gap: .75rem; }
+    .upload-zone.dragover { background: #f1f8ff; border-color: #64b5f6; }
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    .spinner { width: 32px; height: 32px; border: 3px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .toasts { position: fixed; bottom: 16px; right: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 1001; }
+    .toast { background: #263238; color: #fff; padding: .6rem .8rem; border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,.2); }
+    /* Dark mode */
+    :root { --bg:#ffffff; --fg:#111111; --muted:#666; --border:#ddd; --panel:#ffffff; --panel2:#fafafa; }
+    [data-theme="dark"] { --bg:#0f1115; --fg:#e6e6e6; --muted:#9aa0a6; --border:#2a2f3a; --panel:#141823; --panel2:#1a1f2b; }
+    body { background: var(--bg); color: var(--fg); }
+    .calendar { border-color: var(--border); }
+    .calendar-weekdays { background: var(--panel2); border-bottom-color: var(--border); }
+    .weekday { color: var(--muted); }
+    .day { border-color: var(--border); }
+    .date-badge { color: var(--muted); }
+    .editor { background: var(--panel); border-color: var(--border); }
+    .btn { background: var(--panel); color: var(--fg); border-color: var(--border); }
+    .segmented { border-color: var(--border); }
+    .segmented button { background: var(--panel); color: var(--fg); }
+    .segmented button.active { background: #2b4d83; color: #fff; }
+  </style>
+  </head>
+<body>
+  <h1>syllabus2cal</h1>
+  <p>Upload a PDF or DOCX syllabus to extract dated items and export ICS.</p>
+
+  <div class="upload-zone" id="uploadZone">
+  <input id="file" type="file" accept=".pdf,.docx" />
+    <button id="uploadBtn" class="btn">Upload</button>
+    <span class="muted">or drop a file here</span>
+  </div>
+
+  <div id="course" style="display:none;">
+    <div class="row">
+      <label>Course name <input id="courseName" type="text" placeholder="Untitled" /></label>
+      <label>Timezone <input id="timezone" type="text" list="tzList" value="America/New_York" /></label>
+      <label>Term year <input id="termYear" type="number" min="2000" max="2100" /></label>
+    </div>
+    <div class="calendar-header">
+      <div class="calendar-nav">
+        <button class="btn" id="prevMonth">‹</button>
+        <button class="btn" id="todayBtn">Today</button>
+        <button class="btn" id="nextMonth">›</button>
+      </div>
+      <div class="calendar-month" id="monthLabel"></div>
+      <div class="controls btn-group">
+        <div class="filters">
+          <div class="segmented" id="viewToggle">
+            <button id="viewMonth" class="active" type="button">Month</button>
+            <button id="viewWeek" type="button">Week</button>
+          </div>
+          <input id="filterQuery" type="text" placeholder="Filter" style="width: 160px;" />
+          <select id="filterType" style="width: 140px;">
+            <option value="all">All types</option>
+            <option value="assignment">assignment</option>
+            <option value="reading">reading</option>
+            <option value="exam">exam</option>
+            <option value="quiz">quiz</option>
+            <option value="other">other</option>
+          </select>
+        </div>
+        <button class="btn primary" id="saveBtn">Save</button>
+        <a class="btn" id="icsLink" href="#" download>Download ICS</a>
+        <button class="btn" id="gcalBtn">Sync to Google</button>
+        <button class="btn" id="themeToggle" title="Toggle theme">🌓</button>
+      </div>
+    </div>
+
+    <div class="calendar-wrap">
+      <div>
+        <div class="calendar">
+          <div class="calendar-grid calendar-weekdays">
+            <div class="weekday">Sun</div>
+            <div class="weekday">Mon</div>
+            <div class="weekday">Tue</div>
+            <div class="weekday">Wed</div>
+            <div class="weekday">Thu</div>
+            <div class="weekday">Fri</div>
+            <div class="weekday">Sat</div>
+          </div>
+          <div class="calendar-grid" id="calendarDays"></div>
+        </div>
+      </div>
+      <div class="editor" id="editor">
+        <h3 id="editorTitle">Event details</h3>
+        <div class="row">
+          <label>Title <input id="evTitle" type="text" placeholder="Title" /></label>
+        </div>
+        <div class="row">
+          <label>Date <input id="evDate" type="date" /></label>
+          <label>Time <input id="evTime" type="time" /></label>
+        </div>
+        <div class="row">
+          <label>Type
+            <select id="evType">
+              <option value="assignment">assignment</option>
+              <option value="reading">reading</option>
+              <option value="exam">exam</option>
+              <option value="quiz">quiz</option>
+              <option value="other">other</option>
+            </select>
+          </label>
+          <label><input id="evAllDay" type="checkbox" /> All day</label>
+        </div>
+        <div class="row">
+          <label>End date (for multi-day) <input id="evEndDate" type="date" /></label>
+        </div>
+        <div class="row">
+          <label>Location <input id="evLocation" type="text" placeholder="Optional" /></label>
+          <label>Description <input id="evDescription" type="text" placeholder="Optional" /></label>
+        </div>
+        <div class="btn-group" style="margin-top: .5rem;">
+          <button class="btn primary" id="saveEventBtn">Save event</button>
+          <button class="btn" id="duplicateEventBtn">Duplicate</button>
+          <button class="btn danger" id="deleteEventBtn">Delete</button>
+          <span class="muted" id="editorHint"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <datalist id="tzList">
+    <option value="America/New_York"></option>
+    <option value="America/Chicago"></option>
+    <option value="America/Denver"></option>
+    <option value="America/Los_Angeles"></option>
+    <option value="Europe/London"></option>
+    <option value="Europe/Berlin"></option>
+    <option value="Asia/Kolkata"></option>
+    <option value="Asia/Tokyo"></option>
+    <option value="Australia/Sydney"></option>
+    <option value="UTC"></option>
+  </datalist>
+
+  <script>
+    let courseId = null;
+    let courseData = null;
+    let currentMonth = null; // first day of month
+    let selectedEventUid = null;
+    let currentView = 'month'; // or 'week'
+    let anchorDate = null; // for week view
+    let filterQuery = '';
+    let filterType = 'all';
+
+    const uploadBtn = document.getElementById('uploadBtn');
+    const uploadZone = document.getElementById('uploadZone');
+    const themeToggle = document.getElementById('themeToggle');
+    uploadBtn.onclick = async () => {
+      const f = document.getElementById('file').files[0];
+      if (!f) { showToast('Choose a file'); return; }
+      await handleUploadFile(f);
+    };
+
+    uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+    uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+    uploadZone.addEventListener('drop', async (e) => {
+      e.preventDefault(); uploadZone.classList.remove('dragover');
+      const f = e.dataTransfer.files[0]; if (!f) return; await handleUploadFile(f);
+    });
+
+    async function handleUploadFile(file) {
+      const fd = new FormData(); fd.append('file', file);
+      setLoading(true);
+      const res = await fetch('/upload', { method: 'POST', body: fd });
+      const json = await res.json().catch(() => ({}));
+      setLoading(false);
+      if (!res.ok) { showToast(json.error || 'Upload failed'); return; }
+      courseId = json.courseId; showToast(`Uploaded. Parsed ${json.count} items`);
+      await loadCourse();
+    }
+
+    async function loadCourse() {
+      setLoading(true);
+      const res = await fetch(`/course/${courseId}`);
+      const data = await res.json();
+      setLoading(false);
+      if (!res.ok) return alert(data.error || 'Failed to fetch course');
+      courseData = data;
+      document.getElementById('course').style.display = 'block';
+      document.getElementById('courseName').value = data.name || '';
+      document.getElementById('timezone').value = data.timezone;
+      document.getElementById('icsLink').href = `/ics/${courseId}`;
+      // Term year default: prefer detected from any event, else current year
+      const anyYear = (courseData.events[0]?.date || `${new Date().getFullYear()}-01-01`).slice(0,4);
+      document.getElementById('termYear').value = anyYear;
+      // Initialize current month to first event or today
+      const firstEventDate = courseData.events[0]?.date || new Date().toISOString().slice(0,10);
+      const d = new Date(firstEventDate + 'T00:00:00');
+      currentMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+      anchorDate = new Date(firstEventDate + 'T00:00:00');
+      renderCalendar();
+      clearEditor();
+    }
+
+    document.getElementById('saveBtn').onclick = async () => {
+      const name = document.getElementById('courseName').value;
+      const timezone = document.getElementById('timezone').value;
+      const termYear = parseInt(document.getElementById('termYear').value, 10) || new Date().getFullYear();
+      const fixYear = (iso) => `${termYear}-${iso.slice(5)}`;
+      const events = courseData.events.map(e => {
+        const date = e.date;
+        const time = (e.time || '').toString().trim() || null;
+        const type = e.type;
+        const title = e.title;
+        const endDate = e.endDate ? fixYear(e.endDate) : undefined;
+        const adjusted = { ...e, date: fixYear(date), endDate, time, type, title };
+        return adjusted;
+      });
+
+      const res = await fetch(`/course/${courseId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, timezone, events })
+      });
+      const json = await res.json();
+      if (!res.ok) { showToast(json.error || 'Save failed'); return; }
+      showToast('Saved');
+    };
+
+    document.getElementById('gcalBtn').onclick = async () => {
+      setLoading(true);
+      const res = await fetch(`/gcal/${courseId}/sync`, { method: 'POST' });
+      const json = await res.json().catch(() => ({}));
+      setLoading(false);
+      if (!res.ok) { showToast(json.error || 'Sync failed'); return; }
+      showToast(`Synced: created ${json.created}, updated ${json.updated}`);
+    };
+
+    // Calendar logic
+    const monthLabel = document.getElementById('monthLabel');
+    const calendarDays = document.getElementById('calendarDays');
+    document.getElementById('prevMonth').onclick = () => { shiftMonth(-1); };
+    document.getElementById('nextMonth').onclick = () => { shiftMonth(1); };
+    document.getElementById('todayBtn').onclick = () => {
+      const t = new Date(); currentMonth = new Date(t.getFullYear(), t.getMonth(), 1); renderCalendar();
+    };
+    document.getElementById('viewMonth').onclick = () => { setView('month'); };
+    document.getElementById('viewWeek').onclick = () => { setView('week'); };
+    document.getElementById('filterQuery').oninput = (e) => { filterQuery = e.target.value.toLowerCase(); renderCalendar(); };
+    document.getElementById('filterType').onchange = (e) => { filterType = e.target.value; renderCalendar(); };
+    themeToggle.onclick = toggleTheme;
+
+    // Persisted preferences
+    const savedTheme = localStorage.getItem('s2c_theme'); if (savedTheme) setTheme(savedTheme);
+    const savedView = localStorage.getItem('s2c_view'); if (savedView) setView(savedView);
+    const savedMonth = localStorage.getItem('s2c_month'); if (savedMonth) { const d = new Date(savedMonth); if (!isNaN(d)) currentMonth = new Date(d.getFullYear(), d.getMonth(), 1); }
+
+    function shiftMonth(delta) {
+      currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + delta, 1);
+      localStorage.setItem('s2c_month', currentMonth.toISOString());
+      renderCalendar();
+    }
+
+    function fmtMonthLabel(d) {
+      return d.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+    }
+
+    function toISODate(d) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    function emojiForType(type) {
+      if (type === 'reading') return '📘 ';
+      if (type === 'assignment' || type === 'quiz') return '📝 ';
+      if (type === 'exam') return '🧪 ';
+      return '';
+    }
+
+    function chipClass(type) {
+      if (type === 'reading') return 'chip-reading';
+      if (type === 'assignment') return 'chip-assignment';
+      if (type === 'quiz') return 'chip-quiz';
+      if (type === 'exam') return 'chip-exam';
+      return 'chip-other';
+    }
+
+    function renderCalendar() {
+      if (!currentMonth || !courseData) return;
+      if (currentView === 'month') {
+        monthLabel.textContent = fmtMonthLabel(currentMonth);
+      } else {
+        const startOfWeek = getStartOfWeek(anchorDate || new Date());
+        const end = new Date(startOfWeek); end.setDate(startOfWeek.getDate() + 6);
+        const fmt = (d) => d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+        monthLabel.textContent = `${fmt(startOfWeek)} – ${fmt(end)}`;
+      }
+      calendarDays.innerHTML = '';
+
+      const firstDayOfGrid = (() => {
+        if (currentView === 'week') {
+          const a = anchorDate || new Date();
+          return getStartOfWeek(a);
+        } else {
+          const start = new Date(currentMonth);
+          const day = start.getDay();
+          start.setDate(start.getDate() - day);
+          return start;
+        }
+      })();
+
+      const isSameDay = (a, b) => a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
+      const today = new Date();
+
+      const cells = currentView === 'week' ? 7 : 42;
+      for (let i = 0; i < cells; i++) {
+        const d = new Date(firstDayOfGrid);
+        d.setDate(firstDayOfGrid.getDate() + i);
+        const iso = toISODate(d);
+        const dayDiv = document.createElement('div');
+        dayDiv.className = 'day';
+        if (currentView === 'month' && d.getMonth() !== currentMonth.getMonth()) dayDiv.classList.add('other-month');
+        if (isSameDay(d, today)) dayDiv.classList.add('today');
+        const badge = document.createElement('div');
+        badge.className = 'date-badge';
+        badge.textContent = String(d.getDate());
+        dayDiv.appendChild(badge);
+
+        // events for this day
+        const evs = eventsForDay(iso);
+        for (const e of evs) {
+          const chip = document.createElement('div');
+          chip.className = `event-chip ${chipClass(e.type)}`;
+          const timeTxt = e.allDay ? '' : (e.time ? (e.time + ' ') : '');
+          chip.textContent = `${timeTxt}${emojiForType(e.type)}${e.title}`.trim();
+          chip.title = e.title;
+          chip.onclick = (ev) => { ev.stopPropagation(); openEditor(e.uid); };
+          dayDiv.appendChild(chip);
+        }
+
+        dayDiv.onclick = () => { if (currentView === 'week') { anchorDate = new Date(iso + 'T00:00:00'); } createNewEventOn(iso); };
+        calendarDays.appendChild(dayDiv);
+      }
+    }
+
+    function eventsForDay(iso) {
+      const result = [];
+      for (const e of (courseData?.events || [])) {
+        if (filterType !== 'all' && e.type !== filterType) continue;
+        if (filterQuery && !(e.title || '').toLowerCase().includes(filterQuery)) continue;
+        if (e.allDay && e.endDate) {
+          if (iso >= e.date && iso <= e.endDate) result.push(e);
+        } else if (e.date === iso) {
+          result.push(e);
+        }
+      }
+      // order by time; all-day first
+      result.sort((a, b) => {
+        const at = a.allDay ? '00:00' : (a.time || '23:59');
+        const bt = b.allDay ? '00:00' : (b.time || '23:59');
+        return at.localeCompare(bt);
+      });
+      return result;
+    }
+
+    function getStartOfWeek(dateObj) {
+      const s = new Date(dateObj);
+      const day = s.getDay(); s.setDate(s.getDate() - day); return s;
+    }
+
+    function setView(v) {
+      currentView = v;
+      document.getElementById('viewMonth').classList.toggle('active', v==='month');
+      document.getElementById('viewWeek').classList.toggle('active', v==='week');
+      localStorage.setItem('s2c_view', v);
+      renderCalendar();
+    }
+
+    // Editor
+    const evTitle = document.getElementById('evTitle');
+    const evDate = document.getElementById('evDate');
+    const evTime = document.getElementById('evTime');
+    const evType = document.getElementById('evType');
+    const evAllDay = document.getElementById('evAllDay');
+    const evEndDate = document.getElementById('evEndDate');
+    const evLocation = document.getElementById('evLocation');
+    const evDescription = document.getElementById('evDescription');
+    const editorTitle = document.getElementById('editorTitle');
+    const editorHint = document.getElementById('editorHint');
+    document.getElementById('saveEventBtn').onclick = saveEditorEvent;
+    document.getElementById('deleteEventBtn').onclick = deleteEditorEvent;
+    document.getElementById('duplicateEventBtn').onclick = duplicateEditorEvent;
+
+    function clearEditor() {
+      selectedEventUid = null;
+      evTitle.value = '';
+      evDate.value = '';
+      evTime.value = '';
+      evType.value = 'assignment';
+      evAllDay.checked = false;
+      evEndDate.value = '';
+      evLocation.value = '';
+      evDescription.value = '';
+      editorTitle.textContent = 'Event details';
+      editorHint.textContent = '';
+    }
+
+    function openEditor(uid) {
+      const ev = courseData.events.find(x => x.uid === uid);
+      if (!ev) return;
+      selectedEventUid = uid;
+      editorTitle.textContent = 'Edit event';
+      evTitle.value = ev.title || '';
+      evDate.value = ev.date || '';
+      evTime.value = (ev.time || '') || '';
+      evType.value = ev.type || 'other';
+      evAllDay.checked = !!ev.allDay;
+      evEndDate.value = ev.endDate || '';
+      evLocation.value = ev.location || '';
+      evDescription.value = ev.description || '';
+      editorHint.textContent = `UID: ${ev.uid}`;
+    }
+
+    function createNewEventOn(iso) {
+      const uid = 'u_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      const newEv = { uid, date: iso, time: null, title: 'New event', type: 'assignment' };
+      courseData.events.push(newEv);
+      renderCalendar();
+      openEditor(uid);
+    }
+
+    function saveEditorEvent() {
+      if (!selectedEventUid) return;
+      const idx = courseData.events.findIndex(x => x.uid === selectedEventUid);
+      if (idx === -1) return;
+      const allDay = !!evAllDay.checked;
+      const updated = {
+        ...courseData.events[idx],
+        title: evTitle.value.trim() || 'Untitled',
+        date: evDate.value || courseData.events[idx].date,
+        time: allDay ? null : (evTime.value || null),
+        allDay,
+        endDate: (allDay && evEndDate.value) ? evEndDate.value : (allDay ? undefined : undefined),
+        type: evType.value,
+        location: evLocation.value || undefined,
+        description: evDescription.value || undefined,
+      };
+      courseData.events[idx] = updated;
+      renderCalendar();
+      showToast('Event saved');
+    }
+
+    function deleteEditorEvent() {
+      if (!selectedEventUid) return;
+      if (!confirm('Delete this event?')) return;
+      const idx = courseData.events.findIndex(x => x.uid === selectedEventUid);
+      if (idx === -1) return;
+      courseData.events.splice(idx, 1);
+      clearEditor();
+      renderCalendar();
+      showToast('Event deleted');
+    }
+
+    function duplicateEditorEvent() {
+      if (!selectedEventUid) return;
+      const src = courseData.events.find(x => x.uid === selectedEventUid);
+      if (!src) return;
+      const uid = 'u_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      const copy = { ...src, uid, title: src.title + ' (copy)' };
+      courseData.events.push(copy);
+      renderCalendar();
+      openEditor(uid);
+      showToast('Event duplicated');
+    }
+
+    // Theme
+    function setTheme(theme) { document.documentElement.setAttribute('data-theme', theme); localStorage.setItem('s2c_theme', theme); }
+    function toggleTheme() { const cur = document.documentElement.getAttribute('data-theme') || 'light'; setTheme(cur === 'light' ? 'dark' : 'light'); }
+
+    // Loading overlay
+    function setLoading(v) {
+      const ov = document.getElementById('overlay'); if (!ov) return;
+      ov.style.display = v ? 'flex' : 'none';
+      for (const b of document.querySelectorAll('button, input, select')) { b.disabled = !!v; }
+    }
+
+    // Toasts
+    function showToast(msg, timeout = 2500) {
+      const el = document.createElement('div'); el.className = 'toast'; el.textContent = msg;
+      document.getElementById('toasts').appendChild(el);
+      setTimeout(() => { el.remove(); }, timeout);
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft') { e.preventDefault(); currentView==='month' ? shiftMonth(-1) : (anchorDate = new Date((anchorDate||new Date()).getTime() - 7*86400000), renderCalendar()); }
+      if (e.key === 'ArrowRight') { e.preventDefault(); currentView==='month' ? shiftMonth(1) : (anchorDate = new Date((anchorDate||new Date()).getTime() + 7*86400000), renderCalendar()); }
+      if (e.key.toLowerCase() === 't') { e.preventDefault(); const t = new Date(); currentMonth = new Date(t.getFullYear(), t.getMonth(), 1); anchorDate = t; renderCalendar(); }
+      if (e.key.toLowerCase() === 'd') { e.preventDefault(); toggleTheme(); }
+    });
+  </script>
+  <div id="overlay" class="overlay" style="display:none;"><div class="spinner"></div></div>
+  <div id="toasts" class="toasts"></div>
+  </body>
+  </html>
+
+
